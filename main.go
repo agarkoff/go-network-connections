@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"sort"
 	"syscall"
 	"time"
 	"unsafe"
@@ -22,8 +23,18 @@ const (
 	tcpTableOwnerPidAll = 5
 )
 
-func main() {
+// Структура для хранения информации о соединении
+type Connection struct {
+	State       uint32
+	LocalAddr   string
+	LocalPort   uint16
+	RemoteAddr  string
+	RemotePort  uint16
+	PID         uint32
+	ProcessName string
+}
 
+func main() {
 	moduleHandle, err := windows.LoadLibrary(iphlpapiDll)
 	if err != nil {
 		panic(err)
@@ -36,33 +47,58 @@ func main() {
 
 	start := time.Now()
 	res, err := getNetTable(ptr, false, windows.AF_INET, tcpTableOwnerPidAll)
-	took := time.Now().Sub(start)
-	fmt.Printf("Execution took %v : ", took)
-	if err == nil {
-		if res != nil && len(res) >= 4 {
-			fmt.Printf("result len=%d dump:\n%s\n", len(res), hex.Dump(res))
-			count := *(*uint32)(unsafe.Pointer(&res[0]))
-			const structLen = 24
-			for n, pos := uint32(0), 4; n < count && pos+structLen <= len(res); n, pos = n+1, pos+structLen {
-				state := *(*uint32)(unsafe.Pointer(&res[pos]))
-				if state < 1 || state > 12 {
-					panic(state)
-				}
-				laddr := binary.BigEndian.Uint32(res[pos+4 : pos+8])
-				lport := binary.BigEndian.Uint16(res[pos+8 : pos+10])
-				raddr := binary.BigEndian.Uint32(res[pos+12 : pos+16])
-				rport := binary.BigEndian.Uint16(res[pos+16 : pos+18])
-				pid := *(*uint32)(unsafe.Pointer(&res[pos+20]))
-				processName := getProcessName(pid)
+	took := time.Since(start)
+	fmt.Printf("Execution took %v : \n", took)
 
-				fmt.Printf("%5d = %d %s:%d %s:%d pid:%d (%s)\n",
-					n, state, ipToString(laddr), lport, ipToString(raddr), rport, pid, processName)
-			}
-		} else {
-			fmt.Printf("nil result!\n")
-		}
-	} else {
+	if err != nil {
 		fmt.Printf("failed err = %v\n", err)
+		return
+	}
+
+	if res == nil || len(res) < 4 {
+		fmt.Println("nil result!")
+		return
+	}
+
+	fmt.Printf("result len=%d dump:\n%s\n", len(res), hex.Dump(res))
+	count := *(*uint32)(unsafe.Pointer(&res[0]))
+	const structLen = 24
+
+	var connections []Connection
+
+	// Обрабатываем результаты
+	for n, pos := uint32(0), 4; n < count && pos+structLen <= len(res); n, pos = n+1, pos+structLen {
+		state := *(*uint32)(unsafe.Pointer(&res[pos]))
+		if state < 1 || state > 12 {
+			panic(state)
+		}
+		laddr := binary.BigEndian.Uint32(res[pos+4 : pos+8])
+		lport := binary.BigEndian.Uint16(res[pos+8 : pos+10])
+		raddr := binary.BigEndian.Uint32(res[pos+12 : pos+16])
+		rport := binary.BigEndian.Uint16(res[pos+16 : pos+18])
+		pid := *(*uint32)(unsafe.Pointer(&res[pos+20]))
+		processName := getProcessName(pid)
+
+		connections = append(connections, Connection{
+			State:       state,
+			LocalAddr:   ipToString(laddr),
+			LocalPort:   lport,
+			RemoteAddr:  ipToString(raddr),
+			RemotePort:  rport,
+			PID:         pid,
+			ProcessName: processName,
+		})
+	}
+
+	// Сортируем соединения по имени процесса
+	sort.Slice(connections, func(i, j int) bool {
+		return connections[i].ProcessName < connections[j].ProcessName
+	})
+
+	// Выводим результат
+	for n, conn := range connections {
+		fmt.Printf("%5d = %d %s:%d %s:%d pid:%d (%s)\n",
+			n, conn.State, conn.LocalAddr, conn.LocalPort, conn.RemoteAddr, conn.RemotePort, conn.PID, conn.ProcessName)
 	}
 }
 
