@@ -1,13 +1,12 @@
-//go:build windows
-// +build windows
-
 package main
 
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"syscall"
@@ -20,7 +19,6 @@ import (
 const (
 	iphlpapiDll         = "iphlpapi.dll"
 	tcpFn               = "GetExtendedTcpTable"
-	udpFn               = "GetExtendedUdpTable"
 	tcpTableOwnerPidAll = 5
 )
 
@@ -52,14 +50,20 @@ type Connection struct {
 }
 
 func main() {
+	// Добавляем аргумент командной строки для выбора метода сортировки
+	sortBy := flag.String("sort", "process", "Sorting method: 'process' or 'ip'")
+	flag.Parse()
+
 	moduleHandle, err := windows.LoadLibrary(iphlpapiDll)
 	if err != nil {
-		panic(err)
+		fmt.Println("Failed to load library:", err)
+		os.Exit(1)
 	}
 
 	ptr, err := windows.GetProcAddress(moduleHandle, tcpFn)
 	if err != nil {
-		panic(err)
+		fmt.Println("Failed to get function address:", err)
+		os.Exit(1)
 	}
 
 	start := time.Now()
@@ -68,16 +72,16 @@ func main() {
 	fmt.Printf("Execution took %v : \n", took)
 
 	if err != nil {
-		fmt.Printf("failed err = %v\n", err)
+		fmt.Printf("Failed to get net table: %v\n", err)
 		return
 	}
 
 	if res == nil || len(res) < 4 {
-		fmt.Println("nil result!")
+		fmt.Println("No results!")
 		return
 	}
 
-	fmt.Printf("result len=%d dump:\n%s\n", len(res), hex.Dump(res))
+	fmt.Printf("Result len=%d dump:\n%s\n", len(res), hex.Dump(res))
 	count := *(*uint32)(unsafe.Pointer(&res[0]))
 	const structLen = 24
 
@@ -107,23 +111,31 @@ func main() {
 		})
 	}
 
-	// Сортируем соединения по имени процесса, но "Unknown" отправляем в конец
-	sort.Slice(connections, func(i, j int) bool {
-		pi, pj := connections[i].ProcessName, connections[j].ProcessName
+	// Выбираем метод сортировки
+	if *sortBy == "ip" {
+		fmt.Println("Sorting by local IP and port...")
+		sort.Slice(connections, func(i, j int) bool {
+			if connections[i].LocalAddr == connections[j].LocalAddr {
+				return connections[i].LocalPort < connections[j].LocalPort
+			}
+			return connections[i].LocalAddr < connections[j].LocalAddr
+		})
+	} else {
+		fmt.Println("Sorting by process name (default)...")
+		sort.Slice(connections, func(i, j int) bool {
+			pi, pj := connections[i].ProcessName, connections[j].ProcessName
 
-		// "Unknown" всегда идет в конец
-		if pi == "Unknown" {
-			return false
-		}
-		if pj == "Unknown" {
-			return true
-		}
+			if pi == "Unknown" {
+				return false
+			}
+			if pj == "Unknown" {
+				return true
+			}
+			return strings.ToLower(pi) < strings.ToLower(pj)
+		})
+	}
 
-		// Обычная сортировка по алфавиту (без учета регистра)
-		return strings.ToLower(pi) < strings.ToLower(pj)
-	})
-
-	// Выводим результат с выравниванием
+	// Выводим результат
 	fmt.Printf("%5s  %-12s  %-15s  %6s  %-15s  %6s  %5s  %-20s\n",
 		"#", "State", "Local Address", "LPort", "Remote Address", "RPort", "PID", "Process")
 
@@ -144,7 +156,7 @@ func getNetTable(fn uintptr, order bool, family int, class int) ([]byte, error) 
 		if err == 0 {
 			return ptr, nil
 		} else if err == uintptr(syscall.ERROR_INSUFFICIENT_BUFFER) {
-			fmt.Printf("realloc to %d bytes", size)
+			fmt.Printf("Reallocating to %d bytes", size)
 			ptr = make([]byte, size)
 			addr = uintptr(unsafe.Pointer(&ptr[0]))
 		} else {
