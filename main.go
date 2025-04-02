@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -90,9 +91,9 @@ func main() {
 		})
 	}
 
-	// Сортируем соединения по имени процесса
+	// Сортируем соединения по имени процесса без учета регистра
 	sort.Slice(connections, func(i, j int) bool {
-		return connections[i].ProcessName < connections[j].ProcessName
+		return strings.ToLower(connections[i].ProcessName) < strings.ToLower(connections[j].ProcessName)
 	})
 
 	// Выводим результат
