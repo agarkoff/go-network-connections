@@ -112,10 +112,13 @@ func main() {
 		return strings.ToLower(connections[i].ProcessName) < strings.ToLower(connections[j].ProcessName)
 	})
 
-	// Выводим результат
+	// Выводим результат с выравниванием
+	fmt.Printf("%5s  %-12s  %-15s  %6s  %-15s  %6s  %5s  %-20s\n",
+		"#", "State", "Local Address", "LPort", "Remote Address", "RPort", "PID", "Process")
+
 	for n, conn := range connections {
 		stateStr := tcpStateMap[conn.State] // Получаем строковое представление состояния
-		fmt.Printf("%5d = %-12s %s:%d %s:%d pid:%d (%s)\n",
+		fmt.Printf("%5d  %-12s  %-15s  %6d  %-15s  %6d  %5d  %-20s\n",
 			n, stateStr, conn.LocalAddr, conn.LocalPort, conn.RemoteAddr, conn.RemotePort, conn.PID, conn.ProcessName)
 	}
 }
