@@ -107,9 +107,20 @@ func main() {
 		})
 	}
 
-	// Сортируем соединения по имени процесса без учета регистра
+	// Сортируем соединения по имени процесса, но "Unknown" отправляем в конец
 	sort.Slice(connections, func(i, j int) bool {
-		return strings.ToLower(connections[i].ProcessName) < strings.ToLower(connections[j].ProcessName)
+		pi, pj := connections[i].ProcessName, connections[j].ProcessName
+
+		// "Unknown" всегда идет в конец
+		if pi == "Unknown" {
+			return false
+		}
+		if pj == "Unknown" {
+			return true
+		}
+
+		// Обычная сортировка по алфавиту (без учета регистра)
+		return strings.ToLower(pi) < strings.ToLower(pj)
 	})
 
 	// Выводим результат с выравниванием
