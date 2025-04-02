@@ -24,6 +24,22 @@ const (
 	tcpTableOwnerPidAll = 5
 )
 
+// Карта для перевода числового состояния соединения в строковую константу
+var tcpStateMap = map[uint32]string{
+	1:  "CLOSED",
+	2:  "LISTEN",
+	3:  "SYN_SENT",
+	4:  "SYN_RECEIVED",
+	5:  "ESTABLISHED",
+	6:  "FIN_WAIT_1",
+	7:  "FIN_WAIT_2",
+	8:  "CLOSE_WAIT",
+	9:  "CLOSING",
+	10: "LAST_ACK",
+	11: "TIME_WAIT",
+	12: "DELETE_TCB",
+}
+
 // Структура для хранения информации о соединении
 type Connection struct {
 	State       uint32
@@ -98,8 +114,9 @@ func main() {
 
 	// Выводим результат
 	for n, conn := range connections {
-		fmt.Printf("%5d = %d %s:%d %s:%d pid:%d (%s)\n",
-			n, conn.State, conn.LocalAddr, conn.LocalPort, conn.RemoteAddr, conn.RemotePort, conn.PID, conn.ProcessName)
+		stateStr := tcpStateMap[conn.State] // Получаем строковое представление состояния
+		fmt.Printf("%5d = %-12s %s:%d %s:%d pid:%d (%s)\n",
+			n, stateStr, conn.LocalAddr, conn.LocalPort, conn.RemoteAddr, conn.RemotePort, conn.PID, conn.ProcessName)
 	}
 }
 
