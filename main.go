@@ -1,4 +1,4 @@
-//go:build window
+//go:build windows
 // +build windows
 
 package main
@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"syscall"
 	"time"
 	"unsafe"
@@ -52,7 +53,10 @@ func main() {
 				raddr := binary.BigEndian.Uint32(res[pos+12 : pos+16])
 				rport := binary.BigEndian.Uint16(res[pos+16 : pos+18])
 				pid := *(*uint32)(unsafe.Pointer(&res[pos+20]))
-				fmt.Printf("%5d = %d %08x:%d %08x:%d pid:%d\n", n, state, laddr, lport, raddr, rport, pid)
+				processName := getProcessName(pid)
+
+				fmt.Printf("%5d = %d %s:%d %s:%d pid:%d (%s)\n",
+					n, state, ipToString(laddr), lport, ipToString(raddr), rport, pid, processName)
 			}
 		} else {
 			fmt.Printf("nil result!\n")
@@ -79,4 +83,26 @@ func getNetTable(fn uintptr, order bool, family int, class int) ([]byte, error) 
 			return nil, fmt.Errorf("getNetTable failed: %v", err)
 		}
 	}
+}
+
+func getProcessName(pid uint32) string {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return "Unknown"
+	}
+	defer windows.CloseHandle(handle)
+
+	var buf [windows.MAX_PATH]uint16
+	err = windows.GetModuleBaseName(handle, 0, &buf[0], uint32(len(buf)))
+	if err != nil {
+		return "Unknown"
+	}
+	return syscall.UTF16ToString(buf[:])
+}
+
+// Преобразует uint32 IP в строку IPv4
+func ipToString(ip uint32) string {
+	ipBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(ipBytes, ip)
+	return net.IP(ipBytes).String()
 }
